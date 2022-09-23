@@ -1,0 +1,22 @@
+{
+    "sync-rsync.autoShowOutput": true,
+    "sync-rsync.notification": true,
+    "sync-rsync.delete": true, 
+    "sync-rsync.exclude": [ 
+    ".vscode",
+    ".git"
+    ],
+    "sync-rsync.args": [ 
+    "--bwlimit=400", 
+    "--partial",
+    "--out-format='[%t] [%i] (Last Modified: %M) (bytes: %-10l) %-100n'"
+    ],
+    "sync-rsync.autoHideOutput": true,
+    "sync-rsync.sites": [
+        {
+            "name": "remote1",
+            "localPath": "~/mmc/tcpstat", 
+            "remotePath": "parallels@10.211.55.3:~/tcpstat"
+        }
+    ]   
+}
