@@ -36,6 +36,7 @@ static const struct argp_option opts[] = {
 
 static struct env {
 	bool verbose;
+	int uid;
 	int nports;
 	int ports[MAX_PORTS];
 } env = {
@@ -85,24 +86,23 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 		struct in_addr  x4;
 		struct in6_addr x6;
 	} s, d;
-	static __u64 start_ts;
 
 	if (event->af == AF_INET) {
 		s.x4.s_addr = event->saddr_v4;
 		d.x4.s_addr = event->daddr_v4;
 	} else if (event->af == AF_INET6) {
-		memcpy(&s.x6.s6_addr, event->saddr_v6, sizeof(s.x6.s6_addr));
-		memcpy(&d.x6.s6_addr, event->daddr_v6, sizeof(d.x6.s6_addr));
+		// memcpy(&s.x6.s6_addr, event->saddr_v6, sizeof(s.x6.s6_addr));
+		// memcpy(&d.x6.s6_addr, event->daddr_v6, sizeof(d.x6.s6_addr));
 	} else {
 		warn("broken event: event->af=%d", event->af);
 		return;
 	}
 
-	printf("%-16s:%d-%-16s:%d %-2d %lld %lld %lld %d",
-	       inet_ntop(event->af, &s, src, sizeof(src), event->sport),
-	       inet_ntop(event->af, &d, dst, sizeof(dst), event->dport),
-           event->af == AF_INET ? 4 : 6, event->closed,
-           event->bytes_sent, event->bytes_acked, event->bytes_retrans);
+	printf("%-16s:%d-%-16s:%d %-2d %d %lld %lld %lld",
+		   inet_ntop(event->af, &s, src, sizeof(src)), event->sport,
+		   inet_ntop(event->af, &d, dst, sizeof(dst)), event->dport,
+		   event->af == AF_INET ? 4 : 6, event->close,
+		   event->bytes_sent, event->bytes_acked, event->bytes_retrans);
 
 	printf("\n");
 }
@@ -118,7 +118,7 @@ static void print_events(int perf_map_fd)
 	int err;
 
 	pb = perf_buffer__new(perf_map_fd, 128,
-			      handle_event, handle_lost_events, NULL, NULL);
+				  handle_event, handle_lost_events, NULL, NULL);
 	if (!pb) {
 		err = -errno;
 		warn("failed to open perf buffer: %d\n", err);
@@ -141,14 +141,14 @@ cleanup:
 
 int main(int argc, char **argv)
 {
-    LIBBPF_OPTS(bpf_object_open_opts, open_opts);
+	LIBBPF_OPTS(bpf_object_open_opts, open_opts);
 	static const struct argp argp = {
 		.options = opts,
 		.parser = parse_arg,
 		.doc = argp_program_doc,
 		.args_doc = NULL,
 	};
-	struct tcpconnect_bpf *obj;
+	struct tcpstat_bpf *skel;
 	int i, err;
 
 	err = argp_parse(&argp, argc, argv, 0, NULL, NULL);
@@ -158,11 +158,11 @@ int main(int argc, char **argv)
 	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 	libbpf_set_print(libbpf_print_fn);
 
-    err = ensure_core_btf(&open_opts);
-	if (err) {
-		fprintf(stderr, "failed to fetch necessary BTF for CO-RE: %s\n", strerror(-err));
-		return 1;
-	}
+	// err = ensure_core_btf(&open_opts);
+	// if (err) {
+	// 	fprintf(stderr, "failed to fetch necessary BTF for CO-RE: %s\n", strerror(-err));
+	// 	return 1;
+	// }
 
 	/* Open BPF application */
 	skel = tcpstat_bpf__open_opts(&open_opts);
@@ -171,15 +171,15 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-    if (env.nports > 0) {
+	if (env.nports > 0) {
 		skel->rodata->filter_ports_len = env.nports;
 		for (i = 0; i < env.nports; i++) {
-			skel->rodata->filter_ports[i] = htons(env.ports[i]);
+			skel->bss->filter_ports[i] = htons(env.ports[i]);
 		}
 	}
 
 	/* ensure BPF program only handles write() syscalls from our process */
-	skel->bss->my_pid = getpid();
+	//skel->bss->my_pid = getpid();
 
 	/* Load & verify BPF programs */
 	err = tcpstat_bpf__load(skel);
@@ -201,10 +201,10 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-    print_events(bpf_map__fd(obj->maps.events));
+	print_events(bpf_map__fd(skel->maps.events));
 
 cleanup:
 	tcpstat_bpf__destroy(skel);
-    cleanup_core_btf(&open_opts);
+	//cleanup_core_btf(&open_opts);
 	return -err;
 }
