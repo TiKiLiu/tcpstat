@@ -22,13 +22,17 @@ static const char argp_program_doc[] =
 	"\n"
 	"EXAMPLES:\n"
 	"    tcpstat             # trace all TCP connect()s\n"
-	"    tcpstat -P 80       # only trace port 80\n"
-	"    tcpstat -P 80,81    # only trace port 80 and 81\n"
+	"    tcpstat -s 80       # only trace src port 80\n"
+	"    tcpstat -s 80,81    # only trace src port 80 and 81\n"
+	"    tcpstat -d 80       # only trace dst port 80\n"
+	"    tcpstat -d 80,81    # only trace dst port 80 and 81\n"
 	;
 
 static const struct argp_option opts[] = {
 	{ "verbose", 'v', NULL, 0, "Verbose debug output" },
-	{ "port", 'P', "PORTS", 0,
+	{ "src port", 's', "PORTS", 0,
+	  "Comma-separated list of destination ports to trace" },
+	{ "dst port", 'd', "PORTS", 0,
 	  "Comma-separated list of destination ports to trace" },
 	{ NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help" },
 	{},
@@ -37,8 +41,9 @@ static const struct argp_option opts[] = {
 static struct env {
 	bool verbose;
 	int uid;
-	int nports;
-	int ports[MAX_PORTS];
+	int nports[2];
+	int ports[2][MAX_PORTS];
+	
 } env = {
 	.uid = (uid_t) -1,
 };
@@ -52,14 +57,23 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 	case 'h':
 		argp_state_help(state, stderr, ARGP_HELP_STD_HELP);
 		break;
-	case 'P':
+	case 's':
 		nports = MAX_PORTS;
-		err = get_ints(arg, &nports, env.ports, 1, 65535);
+		err = get_ints(arg, &nports, env.ports[0], 1, 65535);
 		if (err) {
 			warn("invalid PORT_LIST: %s\n", arg);
 			argp_usage(state);
 		}
-		env.nports = nports;
+		env.nports[0] = nports;
+		break;
+	case 'd':
+		nports = MAX_PORTS;
+		err = get_ints(arg, &nports, env.ports[1], 1, 65535);
+		if (err) {
+			warn("invalid PORT_LIST: %s\n", arg);
+			argp_usage(state);
+		}
+		env.nports[1] = nports;
 		break;
 	default:
 		return ARGP_ERR_UNKNOWN;
@@ -74,6 +88,8 @@ static void sig_int(int signo)
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
 {
+	if (level == LIBBPF_DEBUG && !env.verbose)
+		return 0;
 	return vfprintf(stderr, format, args);
 }
 
@@ -91,16 +107,16 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 		s.x4.s_addr = event->saddr_v4;
 		d.x4.s_addr = event->daddr_v4;
 	} else if (event->af == AF_INET6) {
-		// memcpy(&s.x6.s6_addr, event->saddr_v6, sizeof(s.x6.s6_addr));
-		// memcpy(&d.x6.s6_addr, event->daddr_v6, sizeof(d.x6.s6_addr));
+		memcpy(&s.x6.s6_addr, event->saddr_v6, sizeof(s.x6.s6_addr));
+		memcpy(&d.x6.s6_addr, event->daddr_v6, sizeof(d.x6.s6_addr));
 	} else {
 		warn("broken event: event->af=%d", event->af);
 		return;
 	}
 
-	printf("%-16s:%d-%-16s:%d %-2d %d %lld %lld %lld",
+	printf("%s:%d-%s:%d %d %d %lld %lld %lld",
 		   inet_ntop(event->af, &s, src, sizeof(src)), event->sport,
-		   inet_ntop(event->af, &d, dst, sizeof(dst)), event->dport,
+		   inet_ntop(event->af, &d, dst, sizeof(dst)), ntohs(event->dport),
 		   event->af == AF_INET ? 4 : 6, event->close,
 		   event->bytes_sent, event->bytes_acked, event->bytes_retrans);
 
@@ -171,10 +187,11 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	if (env.nports > 0) {
-		skel->rodata->filter_ports_len = env.nports;
-		for (i = 0; i < env.nports; i++) {
-			skel->bss->filter_ports[i] = htons(env.ports[i]);
+	int p = 0;
+	for (p = 0; p < 2; p++) {
+		skel->rodata->filter_ports_len[p] = env.nports[p];
+		for (i = 0; i < env.nports[p]; i++) {
+			skel->bss->filter_ports[p][i] = p == 0 ? env.ports[p][i] : ntohs(env.ports[p][i]);
 		}
 	}
 
