@@ -70,7 +70,6 @@ static __always_inline void event_report(struct pt_regs *ctx, struct sock *sk, s
 	u64 curr_ts = bpf_ktime_get_ns() / NSEC_PER_MSEC;
 
 	event.af = family;
-	bpf_trace_printk("%d\n", family);
 	if (family == AF_INET) {
 		bpf_probe_read_kernel(&event.saddr_v4, sizeof(event.saddr_v4), &sk->__sk_common.skc_rcv_saddr);
 		bpf_probe_read_kernel(&event.daddr_v4, sizeof(event.daddr_v4), &sk->__sk_common.skc_daddr);
@@ -81,8 +80,6 @@ static __always_inline void event_report(struct pt_regs *ctx, struct sock *sk, s
 
 	bpf_probe_read_kernel(&event.sport, sizeof(event.sport), &sk->__sk_common.skc_num);
 	bpf_probe_read_kernel(&event.dport, sizeof(event.dport), &sk->__sk_common.skc_dport);
-	bpf_probe_read_kernel(&event.saddr_v4, sizeof(event.saddr_v4), &sk->__sk_common.skc_rcv_saddr);
-	bpf_probe_read_kernel(&event.daddr_v4, sizeof(event.daddr_v4), &sk->__sk_common.skc_daddr);
 
 	event.bytes_sent = BPF_CORE_READ(tp, bytes_sent);
 	event.bytes_acked = BPF_CORE_READ(tp, bytes_acked);
