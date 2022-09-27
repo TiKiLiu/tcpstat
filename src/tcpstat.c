@@ -26,6 +26,8 @@ static const char argp_program_doc[] =
 	"    tcpstat -s 80,81    # only trace src port 80 and 81\n"
 	"    tcpstat -d 80       # only trace dst port 80\n"
 	"    tcpstat -d 80,81    # only trace dst port 80 and 81\n"
+	"    tcpstat -m 1        # open real-time sample\n"
+	"    tcpstat -i 1000     # set sample interval 1000ms\n"
 	;
 
 static const struct argp_option opts[] = {
@@ -34,6 +36,8 @@ static const struct argp_option opts[] = {
 	  "Comma-separated list of destination ports to trace" },
 	{ "dst port", 'd', "PORTS", 0,
 	  "Comma-separated list of destination ports to trace" },
+	{ "mode", 'm', "MODE", 0, "Sample mode, default 0, 1 means open real-time sample"},
+	{ "interval", 'i', "INTERVAL", 0, "Real-time sample interval"},
 	{ NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help" },
 	{},
 };
@@ -43,7 +47,8 @@ static struct env {
 	int uid;
 	int nports[2];
 	int ports[2][MAX_PORTS];
-	
+	int mode;
+	int interval;
 } env = {
 	.uid = (uid_t) -1,
 };
@@ -74,6 +79,23 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 			argp_usage(state);
 		}
 		env.nports[1] = nports;
+		break;
+	case 'i':
+		err = get_int(arg, &env.interval, 0, 10000);
+		if (err) {
+			warn("invalid interval: %s\n", arg);
+			argp_usage(state);
+		}
+		break;
+	case 'm':
+		err = get_int(arg, &env.mode, 0, 1);
+		if (err) {
+			warn("invalid mode: %s\n", arg);
+			argp_usage(state);
+		}
+		break;
+	case 'v':
+		env.verbose = true;
 		break;
 	default:
 		return ARGP_ERR_UNKNOWN;
@@ -114,11 +136,11 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 		return;
 	}
 
-	printf("%s:%d-%s:%d %d %d %lld %lld %lld",
+	printf("%s:%d-%s:%d %d %d %lld %lld %lld %lld",
 		   inet_ntop(event->af, &s, src, sizeof(src)), event->sport,
 		   inet_ntop(event->af, &d, dst, sizeof(dst)), ntohs(event->dport),
-		   event->af == AF_INET ? 4 : 6, event->close,
-		   event->bytes_sent, event->bytes_acked, event->bytes_retrans);
+		   event->af == AF_INET ? 4 : 6, event->close, 
+		   event->bytes_sent, event->bytes_acked, event->bytes_retrans, event->span_ms);
 
 	printf("\n");
 }
@@ -191,9 +213,12 @@ int main(int argc, char **argv)
 	for (p = 0; p < 2; p++) {
 		skel->rodata->filter_ports_len[p] = env.nports[p];
 		for (i = 0; i < env.nports[p]; i++) {
-			skel->bss->filter_ports[p][i] = p == 0 ? env.ports[p][i] : ntohs(env.ports[p][i]);
+			skel->rodata->filter_ports[p][i] = p == 0 ? env.ports[p][i] : ntohs(env.ports[p][i]);
 		}
 	}
+
+	skel->rodata->mode = env.mode;
+	skel->rodata->sample_interval = env.interval;
 
 	/* ensure BPF program only handles write() syscalls from our process */
 	//skel->bss->my_pid = getpid();

@@ -8,7 +8,6 @@
 
 /* The maximum number of items in maps */
 #define MAX_ENTRIES 8192
-#define INTERVAL 1000
 
 /* The maximum number of ports to filter */
 #define MAX_PORTS 64

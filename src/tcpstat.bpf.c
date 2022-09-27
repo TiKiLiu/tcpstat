@@ -4,8 +4,10 @@
 #include <bpf/bpf_tracing.h>
 #include "tcpstat.h"
 
-int filter_ports[2][MAX_PORTS];
+const volatile int filter_ports[2][MAX_PORTS];
 const volatile int filter_ports_len[2] = {0, 0};
+const volatile int mode = 0;
+const volatile int sample_interval = 1000;
 
 #define AF_INET 2
 #define AF_INET6 10
@@ -175,7 +177,7 @@ int BPF_KRETPROBE(tcp_ack_ret, int ret)
 
 	u64 curr_ts = bpf_ktime_get_ns() / NSEC_PER_MSEC;
 	u64 last_report = data->last_report_tstamp;
-	if (curr_ts - INTERVAL >= last_report) {
+	if (mode && curr_ts - sample_interval >= last_report) {
 		event_report(ctx, sk, data,family, 0);
 	}
 
