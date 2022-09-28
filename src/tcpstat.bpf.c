@@ -96,9 +96,6 @@ static __always_inline void event_report(struct pt_regs *ctx, struct sock *sk, s
 	event.close = closed;
 
 	bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU,
-			      &event, sizeof(event));
-
-	bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU,
 				  &event, sizeof(event));
 	ipv4_data_reset(data);
 }
