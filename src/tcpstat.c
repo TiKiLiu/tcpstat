@@ -217,8 +217,8 @@ int main(int argc, char **argv)
 		}
 	}
 
-	skel->rodata->mode = env.mode;
-	skel->rodata->sample_interval = env.interval;
+	skel->rodata->mode = env.mode ? : 0;
+	skel->rodata->sample_interval = env.interval ? : SAMPLE_INTERVAL;
 
 	/* ensure BPF program only handles write() syscalls from our process */
 	//skel->bss->my_pid = getpid();
