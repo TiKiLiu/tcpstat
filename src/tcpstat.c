@@ -5,12 +5,12 @@
 #include <limits.h>
 #include <unistd.h>
 #include <time.h>
+#include <stdio.h>
 #include <bpf/bpf.h>
 #include "tcpstat.h"
-#include "btf_helpers.h"
+//#include "btf_helpers.h"
 #include "tcpstat.skel.h"
 #include "tcpstat_util.h"
-
 
 static volatile sig_atomic_t exiting = 0;
 
@@ -38,6 +38,7 @@ static const struct argp_option opts[] = {
 	  "Comma-separated list of destination ports to trace" },
 	{ "mode", 'm', "MODE", 0, "Sample mode, default 0, 1 means open real-time sample"},
 	{ "interval", 'i', "INTERVAL", 0, "Real-time sample interval"},
+	{ "file path", 'o', "FILE", 0, "Output into given file path"},
 	{ NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help" },
 	{},
 };
@@ -49,6 +50,7 @@ static struct env {
 	int ports[2][MAX_PORTS];
 	int mode;
 	int interval;
+	char fpath[256];
 } env = {
 	.uid = (uid_t) -1,
 };
@@ -96,6 +98,9 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 		break;
 	case 'v':
 		env.verbose = true;
+		break;
+	case 'o':
+		strcpy(env.fpath, arg);
 		break;
 	default:
 		return ARGP_ERR_UNKNOWN;
