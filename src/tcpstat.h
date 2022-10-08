@@ -12,6 +12,7 @@
 
 /* The maximum number of ports to filter */
 #define MAX_PORTS 64
+#define FILE_PATH_LEN 256
 #define NSEC_PER_MSEC 1000000
 
 struct event {

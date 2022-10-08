@@ -5,6 +5,7 @@
 #include <limits.h>
 #include <unistd.h>
 #include <time.h>
+#include <sys/time.h>
 #include <stdio.h>
 #include <bpf/bpf.h>
 #include "tcpstat.h"
@@ -13,6 +14,8 @@
 #include "tcpstat_util.h"
 
 static volatile sig_atomic_t exiting = 0;
+static volatile sig_atomic_t timeout = 0;
+static struct itimerval oldtv;
 
 const char *argp_program_version = "tcpstat 0.1";
 const char *argp_program_bug_address =
@@ -28,6 +31,7 @@ static const char argp_program_doc[] =
 	"    tcpstat -d 80,81    # only trace dst port 80 and 81\n"
 	"    tcpstat -m 1        # open real-time sample\n"
 	"    tcpstat -i 1000     # set sample interval 1000ms\n"
+	"    tcpstat -t 1000     # the program runs for 1000 seconds\n"
 	;
 
 static const struct argp_option opts[] = {
@@ -39,6 +43,7 @@ static const struct argp_option opts[] = {
 	{ "mode", 'm', "MODE", 0, "Sample mode, default 0, 1 means open real-time sample"},
 	{ "interval", 'i', "INTERVAL", 0, "Real-time sample interval"},
 	{ "file path", 'o', "FILE", 0, "Output into given file path"},
+	{ "timeout", 't', "TIMEOUT", 0, "Timeout"},
 	{ NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help" },
 	{},
 };
@@ -50,6 +55,7 @@ static struct env {
 	int ports[2][MAX_PORTS];
 	int mode;
 	int interval;
+	int timeout;
 	char fpath[256];
 } env = {
 	.uid = (uid_t) -1,
@@ -102,6 +108,13 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 	case 'o':
 		strcpy(env.fpath, arg);
 		break;
+	case 't':
+		err = get_int(arg, &env.timeout, 0, INT_MAX);
+		if (err) {
+			warn("invalid timeout :%s\n", arg);
+			argp_usage(state);
+		}
+		break;
 	default:
 		return ARGP_ERR_UNKNOWN;
 	}
@@ -111,6 +124,27 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 static void sig_int(int signo)
 {
 	exiting = 1;
+	printf("exiting\n");
+}
+
+static void timeout_handler(int time)
+{
+	timeout = 1;
+	printf("timeout\n");
+}
+
+void set_timer()
+{
+	struct itimerval itv;
+	itv.it_interval.tv_sec = env.timeout;
+	itv.it_interval.tv_usec = 0;
+	itv.it_value.tv_sec = 0;
+	itv.it_value.tv_usec = 0;
+	if (env.timeout) {
+		int err = setitimer(ITIMER_REAL, &itv, &oldtv);
+		if (err == -1)
+			printf("set timer err\n");
+	}
 }
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
@@ -167,8 +201,9 @@ static void print_events(int perf_map_fd)
 		warn("failed to open perf buffer: %d\n", err);
 		goto cleanup;
 	}
-
-	while (!exiting) {
+	
+	while (!exiting && !timeout) {
+		printf("timeout: %d\n", timeout);
 		err = perf_buffer__poll(pb, 100);
 		if (err < 0 && err != -EINTR) {
 			warn("error polling perf buffer: %s\n", strerror(-err));
@@ -248,6 +283,13 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
+	if (signal(SIGALRM, timeout_handler) == SIG_ERR) {
+		warn("can't set signal handler: %s\n", strerror(errno));
+		err = 1;
+		goto cleanup;
+	}
+
+	set_timer();
 	print_events(bpf_map__fd(skel->maps.events));
 
 cleanup:
@@ -255,3 +297,5 @@ cleanup:
 	//cleanup_core_btf(&open_opts);
 	return -err;
 }
+
+
