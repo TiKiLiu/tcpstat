@@ -48,8 +48,10 @@ static const struct argp_option opts[] = {
 	{},
 };
 
+static FILE *fp;
 static struct env {
 	bool verbose;
+	bool redirect;
 	int uid;
 	int nports[2];
 	int ports[2][MAX_PORTS];
@@ -106,6 +108,7 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 		env.verbose = true;
 		break;
 	case 'o':
+		env.redirect = true;
 		strcpy(env.fpath, arg);
 		break;
 	case 't':
@@ -127,21 +130,22 @@ static void sig_int(int signo)
 	printf("exiting\n");
 }
 
-static void timeout_handler(int time)
-{
-	timeout = 1;
-	printf("timeout\n");
-}
+// static void timeout_handler(int time)
+// {
+// 	timeout = 1;
+// 	printf("timeout\n");
+// }
 
 void set_timer()
 {
 	struct itimerval itv;
-	itv.it_interval.tv_sec = env.timeout;
+	itv.it_interval.tv_sec = 1;
 	itv.it_interval.tv_usec = 0;
 	itv.it_value.tv_sec = 0;
 	itv.it_value.tv_usec = 0;
 	if (env.timeout) {
 		int err = setitimer(ITIMER_REAL, &itv, &oldtv);
+		printf("set timer\n");
 		if (err == -1)
 			printf("set timer err\n");
 	}
@@ -156,7 +160,8 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 
 static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 {
-	const struct event *event = data;
+	const struct event *event = (struct event*)data;
+	char sdata[1024];
 	char src[INET6_ADDRSTRLEN];
 	char dst[INET6_ADDRSTRLEN];
 	union {
@@ -175,13 +180,20 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 		return;
 	}
 
-	printf("%s:%d-%s:%d %d %d %lld %lld %lld %lld",
+	int res = sprintf(sdata, "%s:%d-%s:%d %d %d %lld %lld %lld %lld",
 		   inet_ntop(event->af, &s, src, sizeof(src)), event->sport,
 		   inet_ntop(event->af, &d, dst, sizeof(dst)), ntohs(event->dport),
 		   event->af == AF_INET ? 4 : 6, event->close, 
 		   event->bytes_sent, event->bytes_acked, event->bytes_retrans, event->span_ms);
 
-	printf("\n");
+	sprintf(sdata + res, "\n");
+	
+	if (env.redirect) {
+		fprintf(fp, "%s", sdata);
+		fflush(fp);
+	} else {
+		printf("%s", sdata);
+	}
 }
 
 static void handle_lost_events(void *ctx, int cpu, __u64 lost_cnt)
@@ -203,7 +215,6 @@ static void print_events(int perf_map_fd)
 	}
 	
 	while (!exiting && !timeout) {
-		printf("timeout: %d\n", timeout);
 		err = perf_buffer__poll(pb, 100);
 		if (err < 0 && err != -EINTR) {
 			warn("error polling perf buffer: %s\n", strerror(-err));
@@ -283,16 +294,23 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	if (signal(SIGALRM, timeout_handler) == SIG_ERR) {
-		warn("can't set signal handler: %s\n", strerror(errno));
-		err = 1;
-		goto cleanup;
-	}
+	// if (signal(SIGALRM, timeout_handler) == SIG_ERR) {
+	// 	warn("can't set signal handler: %s\n", strerror(errno));
+	// 	err = 1;
+	// 	goto cleanup;
+	// }
 
-	set_timer();
+	// set_timer();
+
+	if((fp = fopen(env.fpath,"w")) == NULL) {
+		printf("File %s cannot be opened\n", env.fpath);
+	}
+	else
+		printf("File %s opened for writing\n", env.fpath);
 	print_events(bpf_map__fd(skel->maps.events));
 
 cleanup:
+	fclose(fp);
 	tcpstat_bpf__destroy(skel);
 	//cleanup_core_btf(&open_opts);
 	return -err;
