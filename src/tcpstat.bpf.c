@@ -9,6 +9,9 @@ const volatile int filter_ports_len[2] = {0, 0};
 const volatile int mode = 0;
 const volatile int sample_interval = 1000;
 
+const volatile __u32 targ_raddr = 0;
+const volatile unsigned __int128 targ_raddr_v6 = 0;
+
 #define AF_INET 2
 #define AF_INET6 10
 
@@ -30,6 +33,31 @@ static void ipv4_data_reset(struct data_t *data)
 	data->write_xmit_cnt = 0;
 	data->cwnd_limited_cnt = 0;
 	data->last_report_tstamp = bpf_ktime_get_ns() / NSEC_PER_MSEC;
+}
+
+static __always_inline bool filter_raddr(struct sock *sk)
+{
+	u16 family;
+	bpf_probe_read_kernel(&family, sizeof(family), &sk->__sk_common.skc_family);
+	
+	if (family == AF_INET) {
+		if (!targ_raddr)
+			return true;
+		u32 raddr;
+		BPF_CORE_READ_INTO(&raddr, sk, __sk_common.skc_daddr);
+		bpf_trace_printk("v4 %u %u\n", 10, raddr, targ_raddr);
+		if (raddr == targ_raddr)
+			return true;
+	} else if (family == AF_INET6) {
+		if (!targ_raddr_v6)
+			return true;
+		unsigned __int128 raddr_v6;
+		BPF_CORE_READ_INTO(&raddr_v6, sk, __sk_common.skc_v6_daddr.in6_u.u6_addr32);
+		if (raddr_v6 == targ_raddr_v6)
+			return true;
+	}
+
+	return false;
 }
 
 static __always_inline bool filter_port(__u16 port, int flag)
@@ -108,6 +136,9 @@ int BPF_KPROBE(enter_tcp_set_state, struct sock *sk, int state)
 	bpf_probe_read_kernel(&family, sizeof(family), &sk->__sk_common.skc_family);
 	bpf_probe_read_kernel(&lport, sizeof(lport), &sk->__sk_common.skc_num);
 	bpf_probe_read_kernel(&dport, sizeof(dport), &sk->__sk_common.skc_dport);
+
+	if (!filter_raddr(sk))
+		return 0;
 
 	if (!filter_port(lport, 0))
 		return 0;

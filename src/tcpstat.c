@@ -44,6 +44,8 @@ static const struct argp_option opts[] = {
 	{ "interval", 'i', "INTERVAL", 0, "Real-time sample interval"},
 	{ "file path", 'o', "FILE", 0, "Output into given file path"},
 	{ "timeout", 't', "TIMEOUT", 0, "Timeout"},
+	{ "IPv4 address", '4', "IPv4", 0, "Filter IPv4 address"},
+	{ "IPv6 address", '6', "IPv6", 0, "Filter IPv6 address"},
 	{ NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help" },
 	{},
 };
@@ -52,12 +54,14 @@ static FILE *fp;
 static struct env {
 	bool verbose;
 	bool redirect;
-	int uid;
-	int nports[2];
-	int ports[2][MAX_PORTS];
-	int mode;
-	int interval;
-	int timeout;
+	uint32_t uid;
+	uint32_t nports[2];
+	uint32_t ports[2][MAX_PORTS];
+	uint32_t mode;
+	uint32_t interval;
+	uint32_t timeout;
+	uint32_t raddr;
+	unsigned __int128 raddr_v6;
 	char fpath[256];
 } env = {
 	.uid = (uid_t) -1,
@@ -115,6 +119,18 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 		err = get_int(arg, &env.timeout, 0, INT_MAX);
 		if (err) {
 			warn("invalid timeout :%s\n", arg);
+			argp_usage(state);
+		}
+		break;
+	case '4':
+		if (inet_pton(AF_INET, arg, &env.raddr) < 0) {
+			fprintf(stderr, "invalid remote address: %s\n", arg);
+			argp_usage(state);
+		}
+		break;
+	case '6':
+		if (inet_pton(AF_INET6, arg, &env.raddr_v6) < 0) {
+			fprintf(stderr, "invalid remote address: %s\n", arg);
 			argp_usage(state);
 		}
 		break;
@@ -270,6 +286,8 @@ int main(int argc, char **argv)
 
 	skel->rodata->mode = env.mode ? : 0;
 	skel->rodata->sample_interval = env.interval ? : SAMPLE_INTERVAL;
+	skel->rodata->targ_raddr = env.raddr;
+	skel->rodata->targ_raddr_v6 = env.raddr_v6;
 
 	/* ensure BPF program only handles write() syscalls from our process */
 	//skel->bss->my_pid = getpid();

@@ -10,7 +10,7 @@
 
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
-static int get_int(const char *arg, int *ret, int min, int max)
+static int get_int(const char *arg, uint32_t *ret, int min, int max)
 {
 	char *end;
 	long val;
@@ -28,7 +28,7 @@ static int get_int(const char *arg, int *ret, int min, int max)
 	return 0;
 }
 
-static int get_ints(const char *arg, int *size, int *ret, int min, int max)
+static int get_ints(const char *arg, int *size, uint32_t *ret, int min, int max)
 {
 	const char *argp = arg;
 	int max_size = *size;
