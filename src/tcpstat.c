@@ -319,16 +319,15 @@ int main(int argc, char **argv)
 	// }
 
 	// set_timer();
-
-	if((fp = fopen(env.fpath,"w")) == NULL) {
+	if(env.redirect && (fp = fopen(env.fpath,"w")) == NULL) {
 		printf("File %s cannot be opened\n", env.fpath);
-	}
-	else
+	} else if (env.redirect)
 		printf("File %s opened for writing\n", env.fpath);
 	print_events(bpf_map__fd(skel->maps.events));
 
 cleanup:
-	fclose(fp);
+	if (fp)
+		fclose(fp);
 	tcpstat_bpf__destroy(skel);
 	//cleanup_core_btf(&open_opts);
 	return -err;
