@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <bpf/bpf.h>
 #include "tcpstat.h"
-//#include "btf_helpers.h"
+#include "btf_helpers.h"
 #include "tcpstat.skel.h"
 #include "tcpstat_util.h"
 
@@ -263,11 +263,11 @@ int main(int argc, char **argv)
 	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 	libbpf_set_print(libbpf_print_fn);
 
-	// err = ensure_core_btf(&open_opts);
-	// if (err) {
-	// 	fprintf(stderr, "failed to fetch necessary BTF for CO-RE: %s\n", strerror(-err));
-	// 	return 1;
-	// }
+	err = ensure_core_btf(&open_opts);
+	if (err) {
+		fprintf(stderr, "failed to fetch necessary BTF for CO-RE: %s\n", strerror(-err));
+		return 1;
+	}
 
 	/* Open BPF application */
 	skel = tcpstat_bpf__open_opts(&open_opts);
@@ -329,7 +329,7 @@ cleanup:
 	if (fp)
 		fclose(fp);
 	tcpstat_bpf__destroy(skel);
-	//cleanup_core_btf(&open_opts);
+	cleanup_core_btf(&open_opts);
 	return -err;
 }
 
