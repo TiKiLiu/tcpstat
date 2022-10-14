@@ -12,6 +12,7 @@
 #include "btf_helpers.h"
 #include "tcpstat.skel.h"
 #include "tcpstat_util.h"
+#include "trace_helpers.h"
 
 static volatile sig_atomic_t exiting = 0;
 static volatile sig_atomic_t timeout = 0;
@@ -222,6 +223,7 @@ static void print_events(int perf_map_fd)
 {
 	struct perf_buffer *pb;
 	int err;
+	__u64 time_end = 0;
 
 	pb = perf_buffer__new(perf_map_fd, 128,
 				  handle_event, handle_lost_events, NULL, NULL);
@@ -230,8 +232,11 @@ static void print_events(int perf_map_fd)
 		warn("failed to open perf buffer: %d\n", err);
 		goto cleanup;
 	}
+
+	if (env.timeout)
+		time_end = get_ktime_ns() + env.timeout * NSEC_PER_SEC;
 	
-	while (!exiting && !timeout) {
+	while (!exiting && (env.timeout && get_ktime_ns() < time_end)) {
 		err = perf_buffer__poll(pb, 100);
 		if (err < 0 && err != -EINTR) {
 			warn("error polling perf buffer: %s\n", strerror(-err));
