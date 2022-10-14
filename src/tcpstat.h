@@ -14,6 +14,7 @@
 #define MAX_PORTS 64
 #define FILE_PATH_LEN 256
 #define NSEC_PER_MSEC 1000000
+#define USEC_PER_MSEC 1000
 
 struct event {
 	__u32 af;
@@ -51,6 +52,43 @@ struct data_t {
 struct sent_info_t {
 	__u32 snd_nxt;
 	struct sock *sk;
+};
+
+struct tcp_info_t {
+	__u64 data_segs_out;
+	__u64 bytes_sent;
+	__u64 bytes_acked;
+	__u64 bytes_retrans;
+	__u64 total_retrans;
+	
+	__u64 min_rtt_ms;
+	__u64 sample_tstamp;
+	__u64 last_report_tstamp;
+};
+
+struct tcp_event_t {
+	__u16 af;
+	union {
+		__u32 saddr_v4;
+		__u8 saddr_v6[16];
+	};
+
+	union {
+		__u32 daddr_v4;
+		__u8 daddr_v6[16];
+	};
+
+	__u16 sport;
+	__u16 dport;
+
+	__u64 min_rtt_ms;
+	__u64 data_segs_out;
+	__u64 bytes_sent;
+	__u64 bytes_acked;
+	__u64 bytes_retrans;
+	__u64 total_retrans;
+
+	__u64 span_ms;
 };
 
 #endif

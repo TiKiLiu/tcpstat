@@ -146,12 +146,6 @@ static void sig_int(int signo)
 	printf("exiting\n");
 }
 
-// static void timeout_handler(int time)
-// {
-// 	timeout = 1;
-// 	printf("timeout\n");
-// }
-
 void set_timer()
 {
 	struct itimerval itv;
@@ -176,7 +170,7 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 
 static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 {
-	const struct event *event = (struct event*)data;
+	const struct tcp_event_t *event = (struct tcp_event_t*)data;
 	char sdata[1024];
 	char src[INET6_ADDRSTRLEN];
 	char dst[INET6_ADDRSTRLEN];
@@ -196,11 +190,18 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 		return;
 	}
 
-	int res = sprintf(sdata, "%s:%d-%s:%d %d %d %lld %lld %lld %lld",
+	double tx_rate = event->span_ms ? event->bytes_sent / (event->span_ms * 1.0) : 0;
+	double rx_rate = event->span_ms ? event->bytes_acked / (event->span_ms * 1.0) : 0;
+	double r_rate = event->bytes_sent ? event->bytes_retrans * 100 / (event->bytes_sent * 1.0) : 0;
+	double r_rate_b = event->data_segs_out ? event->total_retrans * 100 / (event->data_segs_out* 1.0) : 0;
+
+	int res = sprintf(sdata, "%s:%d-%s:%d IPv%d %lld %lld %lld %lld %lld %0.2f %0.2f %0.2f %0.2f %lld %lld",
 		   inet_ntop(event->af, &s, src, sizeof(src)), event->sport,
 		   inet_ntop(event->af, &d, dst, sizeof(dst)), ntohs(event->dport),
-		   event->af == AF_INET ? 4 : 6, event->close, 
-		   event->bytes_sent, event->bytes_acked, event->bytes_retrans, event->span_ms);
+		   event->af == AF_INET ? 4 : 6, event->data_segs_out,
+		   event->bytes_sent, event->bytes_acked, event->total_retrans, event->bytes_retrans,
+		   tx_rate, rx_rate, r_rate, r_rate_b, event->min_rtt_ms == ~0u? 0 : event->min_rtt_ms,
+		   event->span_ms);
 
 	sprintf(sdata + res, "\n");
 	
@@ -289,9 +290,6 @@ int main(int argc, char **argv)
 	skel->rodata->targ_raddr = env.raddr;
 	skel->rodata->targ_raddr_v6 = env.raddr_v6;
 
-	/* ensure BPF program only handles write() syscalls from our process */
-	//skel->bss->my_pid = getpid();
-
 	/* Load & verify BPF programs */
 	err = tcpstat_bpf__load(skel);
 	if (err) {
@@ -312,18 +310,11 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	// if (signal(SIGALRM, timeout_handler) == SIG_ERR) {
-	// 	warn("can't set signal handler: %s\n", strerror(errno));
-	// 	err = 1;
-	// 	goto cleanup;
-	// }
-
-	// set_timer();
 	if(env.redirect && (fp = fopen(env.fpath,"w")) == NULL) {
 		printf("File %s cannot be opened\n", env.fpath);
 	} else if (env.redirect)
 		printf("File %s opened for writing\n", env.fpath);
-	print_events(bpf_map__fd(skel->maps.events));
+	print_events(bpf_map__fd(skel->maps.tcp_events));
 
 cleanup:
 	if (fp)
