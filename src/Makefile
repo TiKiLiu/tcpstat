@@ -19,7 +19,7 @@ INCLUDES := -I$(OUTPUT) -I../libbpf/include/uapi -I$(dir $(VMLINUX))
 CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
-APPS = tstat
+APPS = tcpstat tcprtt
 
 COMMON_OBJ = \
 	$(OUTPUT)/trace_helpers.o \
@@ -29,7 +29,7 @@ COMMON_OBJ = \
 	$(OUTPUT)/uprobe_helpers.o \
 	$(OUTPUT)/btf_helpers.o \
 
-COMMON = tcpstat tcprtt
+# COMMON = tcpstat tcprtt
 
 CARGO ?= $(shell which cargo)
 ifeq ($(strip $(CARGO)),)
@@ -124,9 +124,9 @@ $(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) $(COMMON_OBJ)| $(OUTPUT)
 	$(Q)$(CC) $(CFLAGS) $^ $(ALL_LDFLAGS) -lelf -lz -o $@
 
 # Build user-space code
-$(patsubst %,$(OUTPUT)/%.o,$(APPS)): %.o: $(COMMON)
+$(patsubst %,$(OUTPUT)/%.o,$(APPS)): %.o : %.skel.h
 
-$(COMMON): %: $(OUTPUT)/%.skel.h | $(OUTPUT) 
+# $(COMMON): %: $(OUTPUT)/%.skel.h | $(OUTPUT) 
 
 # Generate BPF skeletons
 $(OUTPUT)/%.skel.h: $(OUTPUT)/%.bpf.o | $(OUTPUT) $(BPFTOOL)

@@ -236,7 +236,7 @@ static void print_events(int perf_map_fd)
 	if (env.timeout)
 		time_end = get_ktime_ns() + env.timeout * NSEC_PER_SEC;
 	
-	while (!exiting && (env.timeout && get_ktime_ns() < time_end)) {
+	while (!exiting && !(env.timeout && get_ktime_ns() > time_end)) {
 		err = perf_buffer__poll(pb, 100);
 		if (err < 0 && err != -EINTR) {
 			warn("error polling perf buffer: %s\n", strerror(-err));
@@ -250,33 +250,18 @@ cleanup:
 	perf_buffer__free(pb);
 }
 
-int main(int argc, char **argv)
+int probe_stream(struct bpf_object_open_opts* open_opts)
 {
-	LIBBPF_OPTS(bpf_object_open_opts, open_opts);
-	static const struct argp argp = {
-		.options = opts,
-		.parser = parse_arg,
-		.doc = argp_program_doc,
-		.args_doc = NULL,
-	};
 	struct tcpstat_bpf *skel;
 	int i, err;
-
-	err = argp_parse(&argp, argc, argv, 0, NULL, NULL);
-	if (err)
-		return err;
-
-	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
-	libbpf_set_print(libbpf_print_fn);
-
-	err = ensure_core_btf(&open_opts);
+	err = ensure_core_btf(open_opts);
 	if (err) {
 		fprintf(stderr, "failed to fetch necessary BTF for CO-RE: %s\n", strerror(-err));
 		return 1;
 	}
 
 	/* Open BPF application */
-	skel = tcpstat_bpf__open_opts(&open_opts);
+	skel = tcpstat_bpf__open_opts(open_opts);
 	if (!skel) {
 		fprintf(stderr, "Failed to open BPF skeleton\n");
 		return 1;
@@ -325,8 +310,98 @@ cleanup:
 	if (fp)
 		fclose(fp);
 	tcpstat_bpf__destroy(skel);
-	cleanup_core_btf(&open_opts);
+	cleanup_core_btf(open_opts);
 	return -err;
+}
+
+int main(int argc, char **argv)
+{
+	LIBBPF_OPTS(bpf_object_open_opts, open_opts);
+	static const struct argp argp = {
+		.options = opts,
+		.parser = parse_arg,
+		.doc = argp_program_doc,
+		.args_doc = NULL,
+	};
+	int err;
+	err = argp_parse(&argp, argc, argv, 0, NULL, NULL);
+	if (err)
+		return err;
+
+	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
+	libbpf_set_print(libbpf_print_fn);
+	
+	err = probe_stream(&open_opts);
+	return err;
+	
+// 	struct tcpstat_bpf *skel;
+// 	int i, err;
+
+// 	err = argp_parse(&argp, argc, argv, 0, NULL, NULL);
+// 	if (err)
+// 		return err;
+
+// 	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
+// 	libbpf_set_print(libbpf_print_fn);
+
+// 	err = ensure_core_btf(&open_opts);
+// 	if (err) {
+// 		fprintf(stderr, "failed to fetch necessary BTF for CO-RE: %s\n", strerror(-err));
+// 		return 1;
+// 	}
+
+// 	/* Open BPF application */
+// 	skel = tcpstat_bpf__open_opts(&open_opts);
+// 	if (!skel) {
+// 		fprintf(stderr, "Failed to open BPF skeleton\n");
+// 		return 1;
+// 	}
+
+// 	int p = 0;
+// 	for (p = 0; p < 2; p++) {
+// 		skel->rodata->filter_ports_len[p] = env.nports[p];
+// 		for (i = 0; i < env.nports[p]; i++) {
+// 			skel->rodata->filter_ports[p][i] = p == 0 ? env.ports[p][i] : ntohs(env.ports[p][i]);
+// 		}
+// 	}
+
+// 	skel->rodata->mode = env.mode ? : 0;
+// 	skel->rodata->sample_interval = env.interval ? : SAMPLE_INTERVAL;
+// 	skel->rodata->targ_raddr = env.raddr;
+// 	skel->rodata->targ_raddr_v6 = env.raddr_v6;
+
+// 	/* Load & verify BPF programs */
+// 	err = tcpstat_bpf__load(skel);
+// 	if (err) {
+// 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
+// 		goto cleanup;
+// 	}
+
+// 	/* Attach tracepoint handler */
+// 	err = tcpstat_bpf__attach(skel);
+// 	if (err) {
+// 		fprintf(stderr, "Failed to attach BPF skeleton\n");
+// 		goto cleanup;
+// 	}
+
+// 	if (signal(SIGINT, sig_int) == SIG_ERR) {
+// 		warn("can't set signal handler: %s\n", strerror(errno));
+// 		err = 1;
+// 		goto cleanup;
+// 	}
+
+// 	if(env.redirect && (fp = fopen(env.fpath,"w")) == NULL) {
+// 		printf("File %s cannot be opened\n", env.fpath);
+// 	} else if (env.redirect)
+// 		printf("File %s opened for writing\n", env.fpath);
+// 	print_events(bpf_map__fd(skel->maps.tcp_events));
+
+// cleanup:
+// 	if (fp)
+// 		fclose(fp);
+// 	tcpstat_bpf__destroy(skel);
+// 	cleanup_core_btf(&open_opts);
+// 	return -err;
 }
 
 
