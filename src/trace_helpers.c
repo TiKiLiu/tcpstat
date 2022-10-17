@@ -894,10 +894,11 @@ static void print_stars(unsigned int val, unsigned int val_max, int width)
 
 void print_log2_hist(unsigned int *vals, int vals_size, const char *val_type)
 {
-	int stars_max = 40, idx_max = -1;
+	// int stars_max = 40, 
+	int idx_max = -1;
 	unsigned int val, val_max = 0;
 	unsigned long long low, high;
-	int stars, width, i, sum;
+	int width, i, sum = 0;
 
 	for (i = 0; i < vals_size; i++) {
 		val = vals[i];
@@ -913,10 +914,10 @@ void print_log2_hist(unsigned int *vals, int vals_size, const char *val_type)
 	printf("%*s%-*s : count    distribution\n", idx_max <= 32 ? 5 : 15, "",
 		idx_max <= 32 ? 19 : 29, val_type);
 
-	if (idx_max <= 32)
-		stars = stars_max;
-	else
-		stars = stars_max / 2;
+	// if (idx_max <= 32)
+	// 	stars = stars_max;
+	// else
+	// 	stars = stars_max / 2;
 
 	for (i = 0; i <= idx_max; i++) {
 		sum += vals[i];
@@ -928,10 +929,12 @@ void print_log2_hist(unsigned int *vals, int vals_size, const char *val_type)
 		if (low == high)
 			low -= 1;
 		val = vals[i];
+		if (!val)
+			continue;
 		width = idx_max <= 32 ? 10 : 20;
-		printf("%*lld -> %-*lld : %-8d |", width, low, width, high, val);
-		print_stars(val, val_max, stars);
-		printf("|\n");
+		printf("%*lld -> %-*lld : %-8d %0.2f", width, low, width, high, val, (val * 100.0 / sum));
+		//print_stars(val, val_max, stars);
+		printf("\n");
 	}
 }
 
