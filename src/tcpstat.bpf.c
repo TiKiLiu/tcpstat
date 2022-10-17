@@ -37,18 +37,16 @@ static __always_inline bool filter_raddr(struct sock *sk)
 {
 	u16 family;
 	bpf_probe_read_kernel(&family, sizeof(family), &sk->__sk_common.skc_family);
+
+	if (!targ_raddr && !targ_raddr_v6)
+		return true;
 	
 	if (family == AF_INET) {
-		if (!targ_raddr)
-			return true;
 		u32 raddr;
 		BPF_CORE_READ_INTO(&raddr, sk, __sk_common.skc_daddr);
-		bpf_trace_printk("v4 %u %u\n", 10, raddr, targ_raddr);
 		if (raddr == targ_raddr)
 			return true;
 	} else if (family == AF_INET6) {
-		if (!targ_raddr_v6)
-			return true;
 		unsigned __int128 raddr_v6;
 		BPF_CORE_READ_INTO(&raddr_v6, sk, __sk_common.skc_v6_daddr.in6_u.u6_addr32);
 		if (raddr_v6 == targ_raddr_v6)
