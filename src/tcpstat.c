@@ -192,17 +192,18 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 	}
 
 	double tx_rate = event->span_ms ? event->bytes_sent / (event->span_ms * 1.0) : 0;
-	double rx_rate = event->span_ms ? event->bytes_acked / (event->span_ms * 1.0) : 0;
+	double rx_rate = event->span_ms ? event->bytes_received / (event->span_ms * 1.0) : 0;
+	double ax_rate = event->span_ms ? event->bytes_acked / (event->span_ms * 1.0) : 0;
 	double r_rate = event->bytes_sent ? event->bytes_retrans * 100 / (event->bytes_sent * 1.0) : 0;
 	double r_rate_b = event->data_segs_out ? event->total_retrans * 100 / (event->data_segs_out* 1.0) : 0;
 
-	int res = sprintf(sdata, "%s:%d-%s:%d IPv%d %lld %lld %lld %lld %lld %0.2f %0.2f %0.2f %0.2f %lld %lld",
+	int res = sprintf(sdata, "%s:%d-%s:%d IPv%d %lld %lld %lld %lld %lld %lld %0.2f %0.2f %0.2f %0.2f %0.2f %lld %lld",
 		   inet_ntop(event->af, &s, src, sizeof(src)), event->sport,
 		   inet_ntop(event->af, &d, dst, sizeof(dst)), ntohs(event->dport),
 		   event->af == AF_INET ? 4 : 6, event->data_segs_out,
-		   event->bytes_sent, event->bytes_acked, event->total_retrans, event->bytes_retrans,
-		   tx_rate, rx_rate, r_rate, r_rate_b, event->min_rtt_ms == ~0u? 0 : event->min_rtt_ms,
-		   event->span_ms);
+		   event->bytes_sent, event->bytes_received, event->bytes_acked, event->total_retrans, event->bytes_retrans,
+		   tx_rate, rx_rate, ax_rate, r_rate, r_rate_b, 
+		   event->min_rtt_ms == ~0u? 0 : event->min_rtt_ms, event->span_ms);
 
 	sprintf(sdata + res, "\n");
 	

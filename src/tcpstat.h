@@ -57,6 +57,7 @@ struct sent_info_t {
 struct tcp_info_t {
 	__u64 data_segs_out;
 	__u64 bytes_sent;
+	__u64 bytes_received;
 	__u64 bytes_acked;
 	__u64 bytes_retrans;
 	__u64 total_retrans;
@@ -84,6 +85,7 @@ struct tcp_event_t {
 	__u64 min_rtt_ms;
 	__u64 data_segs_out;
 	__u64 bytes_sent;
+	__u64 bytes_received;
 	__u64 bytes_acked;
 	__u64 bytes_retrans;
 	__u64 total_retrans;

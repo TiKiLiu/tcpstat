@@ -81,6 +81,7 @@ static __always_inline int tcp_start(struct sock *sk)
 			.data_segs_out = BPF_CORE_READ(tp, data_segs_out),
 			.bytes_acked = BPF_CORE_READ(tp, bytes_acked),
 			.bytes_sent = BPF_CORE_READ(tp, bytes_sent),
+			.bytes_received = BPF_CORE_READ(tp, bytes_received),
 			.bytes_retrans = BPF_CORE_READ(tp, bytes_retrans),
 			.total_retrans = BPF_CORE_READ(tp, total_retrans),
 			.min_rtt_ms = BPF_CORE_READ(tp, rtt_min.s[0].v) >> 3 / USEC_PER_MSEC,
@@ -98,6 +99,7 @@ static void tcp_info_update(struct sock *sk, struct tcp_info_t *info)
 	info->data_segs_out = BPF_CORE_READ(tp, data_segs_out);
 	info->bytes_acked = BPF_CORE_READ(tp, bytes_acked);
 	info->bytes_sent = BPF_CORE_READ(tp, bytes_sent);
+	info->bytes_received = BPF_CORE_READ(tp, bytes_received);
 	info->bytes_retrans = BPF_CORE_READ(tp, bytes_retrans);
 	info->sample_tstamp = bpf_ktime_get_ns() / NSEC_PER_MSEC;
 
@@ -129,6 +131,7 @@ static __always_inline void tcp_event_report(struct pt_regs *ctx, struct sock *s
 
 	event.data_segs_out = BPF_CORE_READ(tp, data_segs_out) - info->data_segs_out;
 	event.bytes_sent = BPF_CORE_READ(tp, bytes_sent) - info->bytes_sent;
+	event.bytes_received = BPF_CORE_READ(tp, bytes_received) - info->bytes_received;
 	event.bytes_acked = BPF_CORE_READ(tp, bytes_acked) - info->bytes_acked;
 	event.bytes_retrans = BPF_CORE_READ(tp, bytes_retrans) - info->bytes_retrans;
 	event.total_retrans = BPF_CORE_READ(tp, total_retrans) - info->total_retrans;
