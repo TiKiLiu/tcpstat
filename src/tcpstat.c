@@ -11,9 +11,8 @@
 #include "tcpstat.h"
 #include "btf_helpers.h"
 #include "tcpstat.skel.h"
-#include "tcpstat_util.h"
 #include "trace_helpers.h"
-#include "utils.h"
+#include "tcp_utils.h"
 
 static volatile sig_atomic_t exiting = 0;
 static volatile sig_atomic_t timeout = 0;
@@ -46,8 +45,8 @@ static const struct argp_option opts[] = {
 	{ "interval", 'i', "INTERVAL", 0, "Real-time sample interval"},
 	{ "file path", 'o', "FILE", 0, "Output into given file path"},
 	{ "timeout", 't', "TIMEOUT", 0, "Timeout"},
-	{ "IPv4 address", '4', "IPv4", 0, "Filter IPv4 address"},
-	{ "IPv6 address", '6', "IPv6", 0, "Filter IPv6 address"},
+	{ "local address", 'l', "LOCAL", 0, "Filter local address"},
+	{ "remote address", 'r', "REMOTE", 0, "Filter remote address"},
 	{ NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help" },
 	{},
 };
@@ -63,7 +62,7 @@ static struct env {
 	uint32_t interval;
 	uint32_t timeout;
 	uint32_t raddr;
-	unsigned __int128 raddr_v6;
+	uint32_t laddr;
 	char fpath[256];
 } env = {
 	.uid = (uid_t) -1,
@@ -124,14 +123,14 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 			argp_usage(state);
 		}
 		break;
-	case '4':
+	case 'r':
 		if (inet_pton(AF_INET, arg, &env.raddr) < 0) {
 			fprintf(stderr, "invalid remote address: %s\n", arg);
 			argp_usage(state);
 		}
 		break;
-	case '6':
-		if (inet_pton(AF_INET6, arg, &env.raddr_v6) < 0) {
+	case 'l':
+		if (inet_pton(AF_INET, arg, &env.laddr) < 0) {
 			fprintf(stderr, "invalid remote address: %s\n", arg);
 			argp_usage(state);
 		}
@@ -181,16 +180,19 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 		struct in6_addr x6;
 	} s, d;
 
-	if (event->af == AF_INET) {
-		s.x4.s_addr = event->saddr_v4;
-		d.x4.s_addr = event->daddr_v4;
-	} else if (event->af == AF_INET6) {
-		memcpy(&s.x6.s6_addr, event->saddr_v6, sizeof(s.x6.s6_addr));
-		memcpy(&d.x6.s6_addr, event->daddr_v6, sizeof(d.x6.s6_addr));
-	} else {
-		warn("broken event: event->af=%d", event->af);
-		return;
-	}
+	s.x4.s_addr = event->saddr_v4;
+	d.x4.s_addr = event->daddr_v4;
+
+	// if (event->af == AF_INET) {
+	// 	s.x4.s_addr = event->saddr_v4;
+	// 	d.x4.s_addr = event->daddr_v4;
+	// } else if (event->af == AF_INET6) {
+	// 	memcpy(&s.x6.s6_addr, event->saddr_v6, sizeof(s.x6.s6_addr));
+	// 	memcpy(&d.x6.s6_addr, event->daddr_v6, sizeof(d.x6.s6_addr));
+	// } else {
+	// 	warn("broken event: event->af=%d", event->af);
+	// 	return;
+	// }
 
 	double tx_rate = event->span_ms ? event->bytes_sent / (double)event->span_ms : 0;
 	double rx_rate = event->span_ms ? event->bytes_received / (double)event->span_ms : 0;
@@ -200,8 +202,8 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 
 	int res = sprintf(sdata, "%ld %s:%d-%s:%d %d %lld %lld %lld %lld %lld %lld %0.2f %0.2f %0.2f %0.2f %0.2f %lld %lld",
 		   get_timestamp(),
-		   inet_ntop(event->af, &s, src, sizeof(src)), event->sport,
-		   inet_ntop(event->af, &d, dst, sizeof(dst)), ntohs(event->dport),
+		   inet_ntop(AF_INET, &s, src, sizeof(src)), event->sport,
+		   inet_ntop(AF_INET, &d, dst, sizeof(dst)), ntohs(event->dport),
 		   event->af == AF_INET ? 4 : 6, event->data_segs_out,
 		   event->bytes_sent, event->bytes_received, event->bytes_acked, event->total_retrans, event->bytes_retrans,
 		   tx_rate, rx_rate, ax_rate, r_rate, r_rate_b, 
@@ -281,7 +283,7 @@ int probe_stream(struct bpf_object_open_opts* open_opts)
 	skel->rodata->mode = env.mode ? : 0;
 	skel->rodata->sample_interval = env.interval ? : SAMPLE_INTERVAL;
 	skel->rodata->targ_raddr = env.raddr;
-	skel->rodata->targ_raddr_v6 = env.raddr_v6;
+	skel->rodata->targ_laddr = env.laddr;
 
 	/* Load & verify BPF programs */
 	err = tcpstat_bpf__load(skel);

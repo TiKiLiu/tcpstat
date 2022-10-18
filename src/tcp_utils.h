@@ -1,5 +1,5 @@
-#ifndef __TCPSTAT_UTIL_H
-#define __TCPSTAT_UTIL_H
+#ifndef _TCP_UTILS_H_
+#define _TCP_UTILS_H_
 
 #include <sys/resource.h>
 #include <arpa/inet.h>
@@ -10,7 +10,7 @@
 
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
-static int get_int(const char *arg, uint32_t *ret, int min, int max)
+int get_int(const char *arg, uint32_t *ret, int min, int max)
 {
 	char *end;
 	long val;
@@ -28,7 +28,7 @@ static int get_int(const char *arg, uint32_t *ret, int min, int max)
 	return 0;
 }
 
-static int get_ints(const char *arg, int *size, uint32_t *ret, int min, int max)
+int get_ints(const char *arg, int *size, uint32_t *ret, int min, int max)
 {
 	const char *argp = arg;
 	int max_size = *size;
@@ -55,23 +55,11 @@ static int get_ints(const char *arg, int *size, uint32_t *ret, int min, int max)
 	return 0;
 }
 
-// static int get_uint(const char *arg, unsigned int *ret,
-// 		    unsigned int min, unsigned int max)
-// {
-// 	char *end;
-// 	long val;
-
-// 	errno = 0;
-// 	val = strtoul(arg, &end, 10);
-// 	if (errno) {
-// 		warn("strtoul: %s: %s\n", arg, strerror(errno));
-// 		return -1;
-// 	} else if (end == arg || val < min || val > max) {
-// 		return -1;
-// 	}
-// 	if (ret)
-// 		*ret = val;
-// 	return 0;
-// }
+time_t get_timestamp()
+{
+    time_t t;
+    time(&t);
+    return t;
+}
 
 #endif

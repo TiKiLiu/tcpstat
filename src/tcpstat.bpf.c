@@ -18,7 +18,7 @@ const volatile int mode = 0;
 const volatile int sample_interval = 1000;
 
 const volatile __u32 targ_raddr = 0;
-const volatile unsigned __int128 targ_raddr_v6 = 0;
+const volatile __u32 targ_laddr = 0;
 
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
@@ -38,20 +38,26 @@ static __always_inline bool filter_raddr(struct sock *sk)
 	u16 family;
 	bpf_probe_read_kernel(&family, sizeof(family), &sk->__sk_common.skc_family);
 
-	if (!targ_raddr && !targ_raddr_v6)
+	if (!targ_raddr)
 		return true;
-	
-	if (family == AF_INET) {
-		u32 raddr;
-		BPF_CORE_READ_INTO(&raddr, sk, __sk_common.skc_daddr);
-		if (raddr == targ_raddr)
-			return true;
-	} else if (family == AF_INET6) {
-		unsigned __int128 raddr_v6;
-		BPF_CORE_READ_INTO(&raddr_v6, sk, __sk_common.skc_v6_daddr.in6_u.u6_addr32);
-		if (raddr_v6 == targ_raddr_v6)
-			return true;
-	}
+
+	u32 raddr;
+	BPF_CORE_READ_INTO(&raddr, sk, __sk_common.skc_daddr);
+	if (raddr == targ_raddr)
+		return true;
+
+	return false;
+}
+
+static __always_inline bool filter_laddr(struct sock *sk)
+{
+	u32 laddr; 
+
+	if (!targ_laddr)
+		return true;
+	BPF_CORE_READ_INTO(&laddr, sk, __sk_common.skc_rcv_saddr);
+	if (laddr == targ_laddr)
+		return true;
 
 	return false;
 }
@@ -113,13 +119,16 @@ static __always_inline void tcp_event_report(struct pt_regs *ctx, struct sock *s
 	u64 curr_ts = bpf_ktime_get_ns() / NSEC_PER_MSEC;
 
 	event.af = family;
-	if (family == AF_INET) {
-		BPF_CORE_READ_INTO(&event.saddr_v4, sk, __sk_common.skc_rcv_saddr);
-		BPF_CORE_READ_INTO(&event.daddr_v4, sk, __sk_common.skc_daddr);
-	} else {
-		BPF_CORE_READ_INTO(&event.saddr_v6, sk, __sk_common.skc_v6_rcv_saddr.in6_u.u6_addr32);
-		BPF_CORE_READ_INTO(&event.daddr_v6, sk, __sk_common.skc_v6_daddr.in6_u.u6_addr32);
-	}
+	BPF_CORE_READ_INTO(&event.saddr_v4, sk, __sk_common.skc_rcv_saddr);
+	BPF_CORE_READ_INTO(&event.daddr_v4, sk, __sk_common.skc_daddr);
+
+	// if (family == AF_INET) {
+	// 	BPF_CORE_READ_INTO(&event.saddr_v4, sk, __sk_common.skc_rcv_saddr);
+	// 	BPF_CORE_READ_INTO(&event.daddr_v4, sk, __sk_common.skc_daddr);
+	// } else {
+	// 	BPF_CORE_READ_INTO(&event.saddr_v6, sk, __sk_common.skc_v6_rcv_saddr.in6_u.u6_addr32);
+	// 	BPF_CORE_READ_INTO(&event.daddr_v6, sk, __sk_common.skc_v6_daddr.in6_u.u6_addr32);
+	// }
 	BPF_CORE_READ_INTO(&event.sport, sk, __sk_common.skc_num);
 	BPF_CORE_READ_INTO(&event.dport, sk, __sk_common.skc_dport);
 
@@ -154,6 +163,9 @@ int BPF_KPROBE(enter_tcp_set_state, struct sock *sk, int state)
 	bpf_probe_read_kernel(&family, sizeof(family), &sk->__sk_common.skc_family);
 	bpf_probe_read_kernel(&lport, sizeof(lport), &sk->__sk_common.skc_num);
 	bpf_probe_read_kernel(&dport, sizeof(dport), &sk->__sk_common.skc_dport);
+
+	if (!filter_laddr(sk))
+		return 0;
 
 	if (!filter_raddr(sk))
 		return 0;
@@ -195,6 +207,9 @@ int BPF_KPROBE(tcp_ack, struct sock *sk, const struct sk_buff *skb, int flag)
 	__u16 lport, dport;
 	bpf_probe_read_kernel(&lport, sizeof(lport), &sk->__sk_common.skc_num);
 	bpf_probe_read_kernel(&dport, sizeof(dport), &sk->__sk_common.skc_dport);
+
+	if (!filter_laddr(sk))
+		return 0;
 
 	if (!filter_raddr(sk))
 		return 0;
@@ -245,39 +260,3 @@ OUT:
 }
 
 char LICENSE[] SEC("license") = "GPL";
-
-// static __always_inline void event_report(struct pt_regs *ctx, struct sock *sk, struct data_t *data, u16 family, u32 closed)
-// {
-// 	struct event event = {};
-// 	struct inet_sock *inet = (struct inet_sock *)sk;
-// 	struct tcp_sock *tp = (struct tcp_sock *)sk;
-// 	u64 curr_ts = bpf_ktime_get_ns() / NSEC_PER_MSEC;
-
-// 	event.af = family;
-// 	if (family == AF_INET) {
-// 		bpf_probe_read_kernel(&event.saddr_v4, sizeof(event.saddr_v4), &sk->__sk_common.skc_rcv_saddr);
-// 		bpf_probe_read_kernel(&event.daddr_v4, sizeof(event.daddr_v4), &sk->__sk_common.skc_daddr);
-// 	} else {
-// 		BPF_CORE_READ_INTO(&event.saddr_v6, sk, __sk_common.skc_v6_rcv_saddr.in6_u.u6_addr32);
-// 		BPF_CORE_READ_INTO(&event.daddr_v6, sk, __sk_common.skc_v6_daddr.in6_u.u6_addr32);
-// 	}
-
-// 	bpf_probe_read_kernel(&event.sport, sizeof(event.sport), &sk->__sk_common.skc_num);
-// 	bpf_probe_read_kernel(&event.dport, sizeof(event.dport), &sk->__sk_common.skc_dport);
-
-// 	event.bytes_sent = BPF_CORE_READ(tp, bytes_sent);
-// 	event.bytes_acked = BPF_CORE_READ(tp, bytes_acked);
-// 	event.bytes_retrans = BPF_CORE_READ(tp, bytes_retrans);
-
-// 	event.data_segs_out = BPF_CORE_READ(tp, data_segs_out);
-// 	event.retrans_out = BPF_CORE_READ(tp, retrans_out);
-
-// 	event.write_xmit_cnt = data->write_xmit_cnt;
-// 	event.cwnd_limited_cnt = data->cwnd_limited_cnt;
-// 	event.span_ms = curr_ts - data->start_tstamp;
-// 	event.close = closed;
-
-// 	bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU,
-// 				  &event, sizeof(event));
-// 	ipv4_data_reset(data);
-// }
