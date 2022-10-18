@@ -13,6 +13,7 @@
 #include "tcpstat.skel.h"
 #include "tcpstat_util.h"
 #include "trace_helpers.h"
+#include "utils.h"
 
 static volatile sig_atomic_t exiting = 0;
 static volatile sig_atomic_t timeout = 0;
@@ -191,13 +192,14 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 		return;
 	}
 
-	double tx_rate = event->span_ms ? event->bytes_sent / (event->span_ms * 1.0) : 0;
-	double rx_rate = event->span_ms ? event->bytes_received / (event->span_ms * 1.0) : 0;
-	double ax_rate = event->span_ms ? event->bytes_acked / (event->span_ms * 1.0) : 0;
-	double r_rate = event->bytes_sent ? event->bytes_retrans * 100 / (event->bytes_sent * 1.0) : 0;
-	double r_rate_b = event->data_segs_out ? event->total_retrans * 100 / (event->data_segs_out* 1.0) : 0;
+	double tx_rate = event->span_ms ? event->bytes_sent / (double)event->span_ms : 0;
+	double rx_rate = event->span_ms ? event->bytes_received / (double)event->span_ms : 0;
+	double ax_rate = event->span_ms ? event->bytes_acked / (double)event->span_ms : 0;
+	double r_rate = event->bytes_sent ? event->bytes_retrans * 100 / (double)event->bytes_sent : 0;
+	double r_rate_b = event->data_segs_out ? event->total_retrans * 100 / (double)event->data_segs_out : 0;
 
-	int res = sprintf(sdata, "%s:%d-%s:%d IPv%d %lld %lld %lld %lld %lld %lld %0.2f %0.2f %0.2f %0.2f %0.2f %lld %lld",
+	int res = sprintf(sdata, "%ld %s:%d-%s:%d %d %lld %lld %lld %lld %lld %lld %0.2f %0.2f %0.2f %0.2f %0.2f %lld %lld",
+		   get_timestamp(),
 		   inet_ntop(event->af, &s, src, sizeof(src)), event->sport,
 		   inet_ntop(event->af, &d, dst, sizeof(dst)), ntohs(event->dport),
 		   event->af == AF_INET ? 4 : 6, event->data_segs_out,
