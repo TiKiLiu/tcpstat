@@ -15,10 +15,13 @@
 #include "tcprtt.h"
 #include "tcprtt.skel.h"
 #include "trace_helpers.h"
+#include "tcp_utils.h"
 
 static struct env {
 	__u16 lport;
 	__u16 rport;
+	__u16 nports[2];
+	__u32 ports[2][MAX_PORTS];
 	__u32 laddr;
 	__u32 raddr;
 	bool milliseconds;
@@ -60,8 +63,8 @@ static const struct argp_option opts[] = {
 	{ "duration", 'd', "DURATION", 0, "total duration of trace, seconds" },
 	{ "timestamp", 'T', NULL, 0, "include timestamp on output" },
 	{ "millisecond", 'm', NULL, 0, "millisecond histogram" },
-	{ "lport", 'p', "LPORT", 0, "filter for local port" },
-	{ "rport", 'P', "RPORT", 0, "filter for remote port" },
+	{ "lport", 'p', "LPORT", 0, "filter for local port, comma-separated list of destination ports to trace" },
+	{ "rport", 'P', "RPORT", 0, "filter for remote port, comma-separated list of destination ports to trace" },
 	{ "laddr", 'a', "LADDR", 0, "filter for local address" },
 	{ "raddr", 'A', "RADDR", 0, "filter for remote address" },
 	{ "byladdr", 'b', NULL, 0,
@@ -77,6 +80,7 @@ static const struct argp_option opts[] = {
 static error_t parse_arg(int key, char *arg, struct argp_state *state)
 {
 	struct in_addr addr;
+	int nports;
 
 	switch (key) {
 	case 'h':
@@ -108,22 +112,22 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 		env.milliseconds = true;
 		break;
 	case 'p':
-		errno = 0;
-		env.lport = strtoul(arg, NULL, 10);
+		nports = MAX_PORTS;
+		errno = get_ints(arg, &nports, env.ports[0], 1, 65535);
 		if (errno) {
-			fprintf(stderr, "invalid lport: %s\n", arg);
+			warn("invalid port list: %s\n", arg);
 			argp_usage(state);
 		}
-		env.lport = htons(env.lport);
+		env.nports[0] = nports;
 		break;
 	case 'P':
-		errno = 0;
-		env.rport = strtoul(arg, NULL, 10);
+		nports = MAX_PORTS;
+		errno = get_ints(arg, &nports, env.ports[1], 1, 65535);
 		if (errno) {
-			fprintf(stderr, "invalid rport: %s\n", arg);
+			warn("invalid port list: %s\n", arg);
 			argp_usage(state);
 		}
-		env.rport = htons(env.rport);
+		env.nports[1] = nports;
 		break;
 	case 'a':
 		if (inet_aton(arg, &addr) < 0) {
@@ -191,8 +195,11 @@ static int print_map(struct bpf_map *map)
 			printf("[AVG %llu]", hist.latency / hist.cnt);
 		printf("\n");
 		print_log2_hist(hist.slots, MAX_SLOTS, units);
+		printf("%lld %lld %lld %lld %0.2f %0.2f \n\n", hist.data_segs_out, hist.bytes_sent, hist.total_retrans, hist.bytes_retrans, 
+		hist.data_segs_out ? hist.total_retrans * 100.0 / hist.data_segs_out : 0, hist.bytes_sent ? hist.bytes_retrans * 100.0 / hist.bytes_sent : 0);
 		lookup_key = next_key;
 	}
+	printf("------------------------------------\n");
 
 	lookup_key = -1;
 	while (!bpf_map_get_next_key(fd, &lookup_key, &next_key)) {
@@ -234,19 +241,34 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	int p = 0, i = 0;
+	for (p = 0; p < 2; p++) {
+		obj->rodata->targ_ports_len[p] = env.nports[p];
+		for (i = 0; i < env.nports[p]; i++) {
+			obj->rodata->targ_ports[p][i] = p == 0 ? env.ports[p][i] : ntohs(env.ports[p][i]);
+		}
+	}
+
 	obj->rodata->targ_laddr_hist = env.laddr_hist;
 	obj->rodata->targ_raddr_hist = env.raddr_hist;
 	obj->rodata->targ_show_ext = env.extended;
-	obj->rodata->targ_sport = env.lport;
-	obj->rodata->targ_dport = env.rport;
 	obj->rodata->targ_saddr = env.laddr;
 	obj->rodata->targ_daddr = env.raddr;
 	obj->rodata->targ_ms = env.milliseconds;
 
-	if (fentry_can_attach("tcp_rcv_established", NULL))
+	if (fentry_can_attach("tcp_rcv_established", NULL)) {
 		bpf_program__set_autoload(obj->progs.tcp_rcv_kprobe, false);
-	else
+		bpf_program__set_autoload(obj->progs.tcp_transmit_kprobe, false);
+		bpf_program__set_autoload(obj->progs.tcp_transmit_ret_kprobe, false);
+		bpf_program__set_autoload(obj->progs.tcp_retransmit_kprobe, false);
+		bpf_program__set_autoload(obj->progs.tcp_retransmit_ret_kprobe, false);
+	} else {
 		bpf_program__set_autoload(obj->progs.tcp_rcv, false);
+		bpf_program__set_autoload(obj->progs.tcp_transmit, false);
+		bpf_program__set_autoload(obj->progs.tcp_transmit_ret, false);
+		bpf_program__set_autoload(obj->progs.tcp_retransmit, false);
+		bpf_program__set_autoload(obj->progs.tcp_retransmit_ret, false);
+	}
 
 	err = tcprtt_bpf__load(obj);
 	if (err) {
@@ -274,6 +296,8 @@ int main(int argc, char **argv)
 
 	/* main: poll */
 	while (1) {
+		if (env.duration && env.interval > env.duration)
+			env.interval = env.duration;
 		sleep(env.interval);
 		printf("\n");
 
