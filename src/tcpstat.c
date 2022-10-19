@@ -20,7 +20,7 @@ static struct itimerval oldtv;
 
 const char *argp_program_version = "tcpstat 0.1";
 const char *argp_program_bug_address =
-	"https://github.com/iovisor/bcc/tree/master/libbpf-tools";
+	"mraikiliu@gmail.com";
 static const char argp_program_doc[] =
 	"\ntcpstat: Count/Trace active tcp connections\n"
 	"\n"

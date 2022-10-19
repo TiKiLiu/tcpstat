@@ -40,7 +40,7 @@ static volatile bool exiting;
 
 const char *argp_program_version = "tcprtt 0.1";
 const char *argp_program_bug_address =
-	"https://github.com/iovisor/bcc/tree/master/libbpf-tools";
+	"mraikiliu@gmail.com";
 const char argp_program_doc[] =
 "Summarize TCP RTT as a histogram.\n"
 "\n"
@@ -195,11 +195,11 @@ static int print_map(struct bpf_map *map)
 			printf("[AVG %llu]", hist.latency / hist.cnt);
 		printf("\n");
 		print_log2_hist(hist.slots, MAX_SLOTS, units);
-		printf("%lld %lld %lld %lld %0.2f %0.2f \n\n", hist.data_segs_out, hist.bytes_sent, hist.total_retrans, hist.bytes_retrans, 
+		printf("TX %lld %lld %lld %lld %0.2f %0.2f \n\n", hist.data_segs_out, hist.bytes_sent, hist.total_retrans, hist.bytes_retrans, 
 		hist.data_segs_out ? hist.total_retrans * 100.0 / hist.data_segs_out : 0, hist.bytes_sent ? hist.bytes_retrans * 100.0 / hist.bytes_sent : 0);
 		lookup_key = next_key;
 	}
-	printf("------------------------------------\n");
+	printf("-------------------------------------------------------\n");
 
 	lookup_key = -1;
 	while (!bpf_map_get_next_key(fd, &lookup_key, &next_key)) {
