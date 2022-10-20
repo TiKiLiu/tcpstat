@@ -33,6 +33,13 @@ struct {
 	__uint(value_size, sizeof(u32));
 } tcp_events SEC(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, MAX_ENTRIES);
+	__type(key, u32);
+	__type(value, struct sock *);
+} currsocks SEC(".maps");
+
 static __always_inline bool filter_raddr(struct sock *sk)
 {
 	u16 family;
@@ -122,21 +129,8 @@ static __always_inline void tcp_event_report(struct pt_regs *ctx, struct sock *s
 	BPF_CORE_READ_INTO(&event.saddr_v4, sk, __sk_common.skc_rcv_saddr);
 	BPF_CORE_READ_INTO(&event.daddr_v4, sk, __sk_common.skc_daddr);
 
-	// if (family == AF_INET) {
-	// 	BPF_CORE_READ_INTO(&event.saddr_v4, sk, __sk_common.skc_rcv_saddr);
-	// 	BPF_CORE_READ_INTO(&event.daddr_v4, sk, __sk_common.skc_daddr);
-	// } else {
-	// 	BPF_CORE_READ_INTO(&event.saddr_v6, sk, __sk_common.skc_v6_rcv_saddr.in6_u.u6_addr32);
-	// 	BPF_CORE_READ_INTO(&event.daddr_v6, sk, __sk_common.skc_v6_daddr.in6_u.u6_addr32);
-	// }
 	BPF_CORE_READ_INTO(&event.sport, sk, __sk_common.skc_num);
 	BPF_CORE_READ_INTO(&event.dport, sk, __sk_common.skc_dport);
-
-	// event.data_segs_out = 12345;
-	// event.bytes_sent = BPF_CORE_READ(tp, bytes_sent);
-	// event.bytes_acked = BPF_CORE_READ(tp, bytes_acked);
-	// event.bytes_retrans = BPF_CORE_READ(tp, bytes_retrans);
-	// event.total_retrans = BPF_CORE_READ(tp, total_retrans);
 
 	event.data_segs_out = BPF_CORE_READ(tp, data_segs_out) - info->data_segs_out;
 	event.bytes_sent = BPF_CORE_READ(tp, bytes_sent) - info->bytes_sent;
@@ -155,8 +149,7 @@ static __always_inline void tcp_event_report(struct pt_regs *ctx, struct sock *s
 	info->last_report_tstamp = curr_ts;
 }
 
-SEC("kprobe/tcp_set_state")
-int BPF_KPROBE(enter_tcp_set_state, struct sock *sk, int state)
+static __always_inline int proc_tcp_set_state(struct pt_regs *ctx, struct sock *sk, int state)
 {
 	__u16 lport, dport, family;
 
@@ -193,15 +186,7 @@ int BPF_KPROBE(enter_tcp_set_state, struct sock *sk, int state)
 	return 0;
 }
 
-struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
-	__uint(max_entries, MAX_ENTRIES);
-	__type(key, u32);
-	__type(value, struct sock *);
-} currsocks SEC(".maps");
-
-SEC("kprobe/tcp_ack")
-int BPF_KPROBE(tcp_ack, struct sock *sk, const struct sk_buff *skb, int flag)
+static __always_inline int proc_tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 {
 	u32 pid = bpf_get_current_pid_tgid() >> 32;
 	__u16 lport, dport;
@@ -229,10 +214,9 @@ int BPF_KPROBE(tcp_ack, struct sock *sk, const struct sk_buff *skb, int flag)
 	return 0;
 }
 
-SEC("kretprobe/tcp_ack")
-int BPF_KRETPROBE(tcp_ack_ret, int ret)
+static __always_inline int proc_tcp_ack_ret(struct pt_regs *ctx, int ret)
 {
-	u32 pid = bpf_get_current_pid_tgid() >> 32;
+		u32 pid = bpf_get_current_pid_tgid() >> 32;
 	struct sock **skp = bpf_map_lookup_elem(&currsocks, &pid);
 	
 	if (!skp)
@@ -257,6 +241,42 @@ int BPF_KRETPROBE(tcp_ack_ret, int ret)
 OUT:
 	bpf_map_delete_elem(&currsocks, &sk);
 	return 0;
+}
+
+SEC("fentry/tcp_set_state")
+int BPF_PROG(tcp_set_state, struct sock *sk, int state)
+{
+	return proc_tcp_set_state((struct pt_regs *)ctx, sk, state);
+}
+
+SEC("fentry/tcp_ack")
+int BPF_PROG(tcp_ack, struct sock *sk, const struct sk_buff *skb, int flag)
+{
+	return proc_tcp_ack(sk, skb, flag);
+}
+
+SEC("fexit/tcp_ack")
+int BPF_PROG(tcp_ack_ret, int ret)
+{
+	return proc_tcp_ack_ret((struct pt_regs *)ctx, ret);
+}
+
+SEC("kprobe/tcp_set_state")
+int BPF_KPROBE(tcp_set_state_kprobe, struct sock *sk, int state)
+{
+	return proc_tcp_set_state((struct pt_regs *)ctx, sk, state);
+}
+
+SEC("kprobe/tcp_ack")
+int BPF_KPROBE(tcp_ack_kprobe, struct sock *sk, const struct sk_buff *skb, int flag)
+{
+	return proc_tcp_ack(sk, skb, flag);
+}
+
+SEC("kretprobe/tcp_ack")
+int BPF_KRETPROBE(tcp_ack_kretprobe, int ret)
+{
+	return proc_tcp_ack_ret((struct pt_regs *)ctx, ret);
 }
 
 char LICENSE[] SEC("license") = "GPL";

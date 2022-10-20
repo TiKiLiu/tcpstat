@@ -258,14 +258,22 @@ int main(int argc, char **argv)
 
 	if (fentry_can_attach("tcp_rcv_established", NULL)) {
 		bpf_program__set_autoload(obj->progs.tcp_rcv_kprobe, false);
+	} else {
+		bpf_program__set_autoload(obj->progs.tcp_rcv, false);
+	}
+
+	if (fentry_can_attach("__tcp_transmit_skb", NULL)) {
 		bpf_program__set_autoload(obj->progs.tcp_transmit_kprobe, false);
 		bpf_program__set_autoload(obj->progs.tcp_transmit_ret_kprobe, false);
+	} else {
+		bpf_program__set_autoload(obj->progs.tcp_transmit, false);
+		bpf_program__set_autoload(obj->progs.tcp_transmit_ret, false);
+	}
+
+	if (fentry_can_attach("__tcp_retransmit_skb", NULL)) {
 		bpf_program__set_autoload(obj->progs.tcp_retransmit_kprobe, false);
 		bpf_program__set_autoload(obj->progs.tcp_retransmit_ret_kprobe, false);
 	} else {
-		bpf_program__set_autoload(obj->progs.tcp_rcv, false);
-		bpf_program__set_autoload(obj->progs.tcp_transmit, false);
-		bpf_program__set_autoload(obj->progs.tcp_transmit_ret, false);
 		bpf_program__set_autoload(obj->progs.tcp_retransmit, false);
 		bpf_program__set_autoload(obj->progs.tcp_retransmit_ret, false);
 	}
