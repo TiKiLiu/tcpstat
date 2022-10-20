@@ -336,25 +336,25 @@ int BPF_PROG(tcp_retransmit_ret)
 }
 
 SEC("kprobe/__tcp_transmit_skb")
-int BPF_PROG(tcp_transmit_kprobe, struct sock *sk)
+int BPF_KPROBE(tcp_transmit_kprobe, struct sock *sk)
 {
 	return proc___tcp_transmit_skb(sk);
 }
 
 SEC("kretprobe/__tcp_transmit_skb")
-int BPF_PROG(tcp_transmit_ret_kprobe)
+int BPF_KRETPROBE(tcp_transmit_ret_kprobe)
 {
 	return proc___tcp_transmit_skb_ret();
 }
 
 SEC("kprobe/__tcp_retransmit_skb")
-int BPF_PROG(tcp_retransmit_kprobe, struct sock *sk)
+int BPF_KPROBE(tcp_retransmit_kprobe, struct sock *sk)
 {
 	return proc_tcp_retransmit_skb(sk);
 }
 
 SEC("kretprobe/__tcp_retransmit_skb")
-int BPF_PROG(tcp_retransmit_ret_kprobe)
+int BPF_KRETPROBE(tcp_retransmit_ret_kprobe)
 {
 	return proc_tcp_retransmit_skb_ret();
 }
