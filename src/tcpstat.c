@@ -183,17 +183,6 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 	s.x4.s_addr = event->saddr_v4;
 	d.x4.s_addr = event->daddr_v4;
 
-	// if (event->af == AF_INET) {
-	// 	s.x4.s_addr = event->saddr_v4;
-	// 	d.x4.s_addr = event->daddr_v4;
-	// } else if (event->af == AF_INET6) {
-	// 	memcpy(&s.x6.s6_addr, event->saddr_v6, sizeof(s.x6.s6_addr));
-	// 	memcpy(&d.x6.s6_addr, event->daddr_v6, sizeof(d.x6.s6_addr));
-	// } else {
-	// 	warn("broken event: event->af=%d", event->af);
-	// 	return;
-	// }
-
 	double tx_rate = event->span_ms ? event->bytes_sent / (double)event->span_ms : 0;
 	double rx_rate = event->span_ms ? event->bytes_received / (double)event->span_ms : 0;
 	double ax_rate = event->span_ms ? event->bytes_acked / (double)event->span_ms : 0;
@@ -284,6 +273,20 @@ int probe_stream(struct bpf_object_open_opts* open_opts)
 	skel->rodata->sample_interval = env.interval ? : SAMPLE_INTERVAL;
 	skel->rodata->targ_raddr = env.raddr;
 	skel->rodata->targ_laddr = env.laddr;
+	
+	if (fentry_can_attach("tcp_set_state", NULL)) {
+		bpf_program__set_autoload(skel->progs.tcp_set_state_kprobe, false);
+	} else {
+		bpf_program__set_autoload(skel->progs.tcp_set_state, false);
+	}
+
+	if (fentry_can_attach("tcp_ack", NULL)) {
+		bpf_program__set_autoload(skel->progs.tcp_ack_kprobe, false);
+		bpf_program__set_autoload(skel->progs.tcp_ack_kretprobe, false);
+	} else {
+		bpf_program__set_autoload(skel->progs.tcp_ack, false);
+		bpf_program__set_autoload(skel->progs.tcp_ack_ret, false);
+	}
 
 	/* Load & verify BPF programs */
 	err = tcpstat_bpf__load(skel);
